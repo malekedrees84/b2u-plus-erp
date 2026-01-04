@@ -42,7 +42,7 @@
       "endpoints": [
         "https://github.com/malekedrees84/b2u-plus-erp/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENCQUQ5NkUzQjZEQzQzQTQKUldTa1E5eTI0NWF0eS9TeU1qUUNiTXdzd1pTU29DUm5HbUNmbEozb29TQ2pQTHpTQTFkNHp4ZlQK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU5RTkxRTcyNTQ3Q0M1OEQKUldTTnhYeFVjaDdwV1ZrcTVFQTlaSkk1bTdPdjA3dG9TNUhRUVpiaktXc0pBR1hkMEZUdkFVbkMK",
       "windows": {
         "installMode": "passive"
       }

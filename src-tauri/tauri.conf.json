@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "b2u-plus-erp",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "identifier": "com.b2uplus.erp",
   "build": {
     "frontendDist": "../dist",
@@ -20,13 +20,16 @@
         "fullscreen": false
       }
     ],
-    "security": { "csp": null }
+    "security": {
+      "csp": null
+    }
   },
   "bundle": {
     "active": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
+      "icons/128x128.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
@@ -39,8 +42,10 @@
       "endpoints": [
         "https://github.com/malekedrees84/b2u-plus-erp/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk3MzI1NkMzQUQ0MzVGNEQKUldSTlgwT3R3MVl5bDg4ZWlWZURxU2VSM3M4THlhVE9hM3huOEZXMktrbjl0S1E0Vmpia3RQTUYK",
-      "windows": { "installMode": "passive" }
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENCQUQ5NkUzQjZEQzQzQTQKUldTa1E5eTI0NWF0eS9TeU1qUUNiTXdzd1pTU29DUm5HbUNmbEozb29TQ2pQTHpTQTFkNHp4ZlQK",
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

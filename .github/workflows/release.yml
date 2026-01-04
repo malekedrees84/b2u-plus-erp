@@ -26,7 +26,7 @@ jobs:
           path: _b2uprog
           token: ${{ secrets.B2UPROG_TOKEN }}
 
-      # ✅ Sync UI (بدون ما ننقل مجلد .git) + بدون ما يعمل submodule
+      # ✅ Sync UI (بدون .git)
       - name: Sync UI from b2uprog into b2u-plus-erp
         shell: bash
         run: |
@@ -75,17 +75,17 @@ jobs:
       - name: Install Tauri CLI
         run: npm i -D @tauri-apps/cli
 
-      # ✅ أهم خطوة: نكتب المفتاح لملف (حل جذري لمشاكل base64/newlines)
-      - name: Write signing key file from Secrets
+      # ✅ كتابة المفتاح من Base64 (حل جذري لمسافات/أسطر/رموز)
+      - name: Write signing key file from Base64 Secret
         shell: bash
         run: |
           set -e
           mkdir -p "$HOME/.tauri"
-          printf "%s" "${TAURI_SIGNING_PRIVATE_KEY}" > "$HOME/.tauri/b2u-plus-erp.key"
-          echo "" >> "$HOME/.tauri/b2u-plus-erp.key"
+          echo "${TAURI_SIGNING_PRIVATE_KEY_B64}" | base64 --decode > "$HOME/.tauri/b2u-plus-erp.key"
           chmod 600 "$HOME/.tauri/b2u-plus-erp.key"
+          echo "✅ Key file written"
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_B64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_B64 }}
 
       - name: Build Tauri (release)
         run: npx tauri build

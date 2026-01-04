@@ -1,12 +1,12 @@
 {
-  "version": "0.1.2",
-  "notes": "Update v0.1.2 – stability improvements",
-  "pub_date": "2026-01-04T10:00:00Z",
+  "version": "0.1.4",
+  "notes": "New update available",
+  "pub_date": "2026-01-04T18:00:00Z",
   "platforms": {
     "darwin-aarch64": {
-      "url": "https://github.com/malekedrees84/b2u-plus-erp/releases/download/v0.1.2/b2u-plus-erp_0.1.2_aarch64.dmg",
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTUldQcDl0NVgydm91VkVJeG04Zm9rQ2FJOUlUMHM1SWkrbHcvU0dEQ3dmRVhLeVA5MDNmWGhTQVBMTHpLQUZFdDRlL2RrbDVxR3V6ano4cVhUSnNGdFY2UWxqSkdmblFJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzY3NTMzODc4CWZpbGU6YjJ1LXBsdXMtZXJwXzAuMS4yX2FhcmNoNjQuZG1nCnJZSHQzT2N3Wmw5Ym1mWEFWdGIvQTRBUHdsanp0eEJoK0lNbG1WQUR2ZUU1OUVsS2trcDJkcWVSNGxlMFdBQmhkN3E1NXVsWUdhNElHK1lOMEx0c0FBPT0K",
-      "size": 5244995
+      "url": "https://github.com/malekedrees84/b2u-plus-erp/releases/download/v0.1.4/b2u-plus-erp_0.1.4_aarch64.dmg",
+      "signature": "",
+      "size": 0
     }
   }
 }

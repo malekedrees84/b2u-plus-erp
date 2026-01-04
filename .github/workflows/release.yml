@@ -1,39 +1,111 @@
-name: Auto Release (Tauri)
+name: Auto Release (Tauri) + Sync from b2uprog
 
 on:
+  workflow_dispatch:
   push:
-    tags:
-      - "v*"
+    branches: [ main ]
+
+permissions:
+  contents: write
 
 jobs:
   release:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout b2u-plus-erp
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout b2uprog (source UI)
+        uses: actions/checkout@v4
+        with:
+          repository: malekedrees84/b2uprog
+          ref: main
+          path: _b2uprog
+          token: ${{ secrets.B2UPROG_TOKEN }}
+
+      # ✅ Sync UI files from b2uprog into this repo
+      - name: Sync UI from b2uprog into b2u-plus-erp
+        run: |
+          shopt -s extglob
+          rm -rf ./components ./services ./backend ./icons ./dist ./node_modules || true
+          rm -f ./App.tsx ./index.tsx ./index.html ./vite.config.ts ./tsconfig.json ./constants.ts ./types.ts ./package.json ./package-lock.json ./README.md ./metadata.json || true
+
+          cp -R ./_b2uprog/components ./components
+          cp -R ./_b2uprog/services ./services || true
+          cp -R ./_b2uprog/backend ./backend || true
+          cp -R ./_b2uprog/icons ./icons || true
+          cp -R ./_b2uprog/dist ./dist || true
+
+          cp -f ./_b2uprog/App.tsx ./App.tsx || true
+          cp -f ./_b2uprog/index.tsx ./index.tsx || true
+          cp -f ./_b2uprog/index.html ./index.html || true
+          cp -f ./_b2uprog/vite.config.ts ./vite.config.ts || true
+          cp -f ./_b2uprog/tsconfig.json ./tsconfig.json || true
+          cp -f ./_b2uprog/constants.ts ./constants.ts || true
+          cp -f ./_b2uprog/types.ts ./types.ts || true
+          cp -f ./_b2uprog/package.json ./package.json || true
+          cp -f ./_b2uprog/package-lock.json ./package-lock.json || true
+          cp -f ./_b2uprog/README.md ./README.md || true
+          cp -f ./_b2uprog/metadata.json ./metadata.json || true
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
+      - name: Install dependencies
+        run: npm ci
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install frontend deps
-        run: npm install
+      - name: Install Tauri CLI
+        run: npm i -D @tauri-apps/cli
 
-      - name: Build frontend
-        run: npm run build
+      # 🔥 Auto bump version (patch) in tauri.conf.json
+      - name: Bump version (patch)
+        run: |
+          node - <<'NODE'
+          const fs = require("fs");
+          const path = "src-tauri/tauri.conf.json";
+          const j = JSON.parse(fs.readFileSync(path,"utf8"));
+          const v = (j.version || "0.1.0").split(".").map(n=>parseInt(n,10));
+          v[2] = (v[2]||0)+1;
+          j.version = v.join(".");
+          fs.writeFileSync(path, JSON.stringify(j,null,2));
+          console.log("NEW_VERSION:", j.version);
+          NODE
 
-      - name: Build Tauri app
+      - name: Build Tauri (release)
         run: npx tauri build
 
-      - name: Upload release assets
+      - name: Get version
+        id: ver
+        run: |
+          node - <<'NODE'
+          const fs = require("fs");
+          const j = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json","utf8"));
+          console.log("version="+j.version);
+          NODE >> $GITHUB_OUTPUT
+
+      - name: Create Tag
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add -A
+          git commit -m "chore: release v${{ steps.ver.outputs.version }}" || true
+          git tag "v${{ steps.ver.outputs.version }}"
+          git push origin main --tags
+
+      - name: Upload Release (GH Release)
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: v${{ steps.ver.outputs.version }}
           files: |
-            src-tauri/target/release/bundle/**/* 
+            src-tauri/target/release/bundle/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

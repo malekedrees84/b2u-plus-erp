@@ -1,4 +1,4 @@
-name: Auto Release (Tauri) - macOS + Windows (Signed)
+name: Auto Release (Tauri) - macOS (Signed)
 
 on:
   workflow_dispatch:
@@ -9,13 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-
-    runs-on: ${{ matrix.os }}
+  mac_release:
+    runs-on: macos-latest
 
     steps:
       - name: Checkout repo
@@ -31,7 +26,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install deps
+      - name: Install dependencies
         shell: bash
         run: |
           if [ -f package-lock.json ]; then
@@ -43,45 +38,31 @@ jobs:
       - name: Install Tauri CLI
         run: npm i -D @tauri-apps/cli
 
-      - name: Write signing key from Base64 Secret
+      # ✅ Write signing key from Base64 secret to file
+      - name: Write signing key (from Base64 Secret)
         shell: bash
         run: |
           set -e
           mkdir -p "$HOME/.tauri"
           echo "${TAURI_SIGNING_PRIVATE_KEY_B64}" | tr -d '\n' | base64 --decode > "$HOME/.tauri/b2u-plus-erp.key"
           chmod 600 "$HOME/.tauri/b2u-plus-erp.key"
-          echo "✅ Key written: $HOME/.tauri/b2u-plus-erp.key"
+          echo "✅ Key written"
+
         env:
           TAURI_SIGNING_PRIVATE_KEY_B64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_B64 }}
 
-      - name: Build Tauri
+      - name: Build Tauri (release)
         run: npx tauri build
 
-      - name: Sign bundles
+      - name: Sign DMG
         shell: bash
         run: |
           set -e
-          PASS="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD}"
-
-          sign_one () {
-            local f="$1"
-            echo "Signing: $f"
-            npx tauri signer sign "$f" \
-              --private-key-path "$HOME/.tauri/b2u-plus-erp.key" \
-              --password "$PASS"
-          }
-
-          if [[ "$RUNNER_OS" == "macOS" ]]; then
-            DMG="$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -n 1 || true)"
-            [[ -n "$DMG" ]] && sign_one "$DMG"
-          fi
-
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            MSI="$(ls src-tauri/target/release/bundle/msi/*.msi 2>/dev/null | head -n 1 || true)"
-            EXE="$(ls src-tauri/target/release/bundle/nsis/*.exe 2>/dev/null | head -n 1 || true)"
-            [[ -n "$MSI" ]] && sign_one "$MSI"
-            [[ -n "$EXE" ]] && sign_one "$EXE"
-          fi
+          DMG="$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)"
+          echo "Signing $DMG"
+          npx tauri signer sign "$DMG" \
+            --private-key-path "$HOME/.tauri/b2u-plus-erp.key" \
+            --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD}"
         env:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
@@ -96,9 +77,5 @@ jobs:
           files: |
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/dmg/*.sig
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/msi/*.sig
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/nsis/*.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

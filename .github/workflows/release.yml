@@ -1,4 +1,4 @@
-name: Auto Release (Tauri) + Sync from b2uprog
+name: Auto Release (Tauri) - macOS (Signed)
 
 on:
   workflow_dispatch:
@@ -9,133 +9,69 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  mac_release:
     runs-on: macos-latest
 
     steps:
-      # 1) Checkout main repo
-      - name: Checkout b2u-plus-erp
+      - name: Checkout repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 2) Checkout source UI repo (b2uprog) into _b2uprog
-      - name: Checkout b2uprog (source UI)
-        uses: actions/checkout@v4
-        with:
-          repository: malekedrees84/b2uprog
-          ref: main
-          path: _b2uprog
-          token: ${{ secrets.B2UPROG_TOKEN }}
-
-      # 3) Sync UI (NO .git) - avoid submodule
-      - name: Sync UI from b2uprog into b2u-plus-erp
-        shell: bash
-        run: |
-          set -e
-
-          # clean old UI files (adjust if needed)
-          rm -rf ./components ./services ./backend ./icons ./dist ./node_modules || true
-          rm -f ./App.tsx ./index.tsx ./index.html ./vite.config.ts ./tsconfig.json ./constants.ts ./types.ts ./package.json ./package-lock.json ./README.md ./metadata.json || true
-
-          # rsync folders (exclude .git)
-          rsync -a --delete --exclude ".git" _b2uprog/components/ components/ || true
-          rsync -a --delete --exclude ".git" _b2uprog/services/ services/ || true
-          rsync -a --delete --exclude ".git" _b2uprog/backend/ backend/ || true
-          rsync -a --delete --exclude ".git" _b2uprog/icons/ icons/ || true
-          rsync -a --delete --exclude ".git" _b2uprog/dist/ dist/ || true
-
-          # copy root files
-          cp -f _b2uprog/App.tsx App.tsx || true
-          cp -f _b2uprog/index.tsx index.tsx || true
-          cp -f _b2uprog/index.html index.html || true
-          cp -f _b2uprog/vite.config.ts vite.config.ts || true
-          cp -f _b2uprog/tsconfig.json tsconfig.json || true
-          cp -f _b2uprog/constants.ts constants.ts || true
-          cp -f _b2uprog/types.ts types.ts || true
-          cp -f _b2uprog/package.json package.json || true
-          cp -f _b2uprog/package-lock.json package-lock.json || true
-          cp -f _b2uprog/README.md README.md || true
-          cp -f _b2uprog/metadata.json metadata.json || true
-
-          # remove the checked-out repo folder so it won't be accidentally committed
-          rm -rf _b2uprog
-
-          echo "✅ Sync done"
-
-      # 4) Setup Node
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      # 5) Install dependencies
-      - name: Install dependencies (ci if lock exists)
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
         shell: bash
         run: |
-          set -e
           if [ -f package-lock.json ]; then
             npm ci
           else
             npm install
           fi
 
-      # 6) Setup Rust
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      # 7) Ensure Tauri CLI available
       - name: Install Tauri CLI
-        shell: bash
         run: npm i -D @tauri-apps/cli
 
-      # 8) Write signing key from Base64 secret + validate header
-      - name: Write signing key file from Base64 Secret
+      # ✅ Write signing key from Base64 secret to file
+      - name: Write signing key (from Base64 Secret)
         shell: bash
         run: |
           set -e
           mkdir -p "$HOME/.tauri"
-
-          # decode base64 -> key file
-          echo "${TAURI_SIGNING_PRIVATE_KEY_B64}" | base64 --decode > "$HOME/.tauri/b2u-plus-erp.key"
+          echo "${TAURI_SIGNING_PRIVATE_KEY_B64}" | tr -d '\n' | base64 --decode > "$HOME/.tauri/b2u-plus-erp.key"
           chmod 600 "$HOME/.tauri/b2u-plus-erp.key"
+          echo "✅ Key written"
 
-          echo "✅ key head:"
-          head -n 2 "$HOME/.tauri/b2u-plus-erp.key"
-
-          # must contain: untrusted comment:
-          grep -q "^untrusted comment:" "$HOME/.tauri/b2u-plus-erp.key"
         env:
           TAURI_SIGNING_PRIVATE_KEY_B64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_B64 }}
 
-      # 9) Build Tauri (release)
       - name: Build Tauri (release)
-        shell: bash
-        run: |
-          set -e
-          npx tauri build
+        run: npx tauri build
 
-      # 10) Sign DMG (produces .sig)
       - name: Sign DMG
         shell: bash
         run: |
           set -e
           DMG="$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)"
-          echo "Signing: $DMG"
-
+          echo "Signing $DMG"
           npx tauri signer sign "$DMG" \
             --private-key-path "$HOME/.tauri/b2u-plus-erp.key" \
             --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD}"
-
-          echo "✅ Signed. Files now:"
-          ls -la src-tauri/target/release/bundle/dmg || true
         env:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      # 11) Create/Update GitHub Release (upload dmg + sig)
-      - name: Upload Release (GH Release)
+      - name: Upload Release (latest)
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: latest
+          name: latest
+          make_latest: true
           overwrite: true
           fail_on_unmatched_files: false
           files: |

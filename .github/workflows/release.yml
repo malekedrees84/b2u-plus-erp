@@ -13,17 +13,11 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      # ===============================
-      # 1) Checkout b2u-plus-erp
-      # ===============================
       - name: Checkout b2u-plus-erp
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # ===============================
-      # 2) Checkout b2uprog (Google AI Studio source)
-      # ===============================
       - name: Checkout b2uprog (source UI)
         uses: actions/checkout@v4
         with:
@@ -32,49 +26,45 @@ jobs:
           path: _b2uprog
           token: ${{ secrets.B2UPROG_TOKEN }}
 
-      # ===============================
-      # 3) Sync UI files
-      # ===============================
-      - name: Sync UI from b2uprog
+      - name: Sync UI from b2uprog into b2u-plus-erp
         shell: bash
         run: |
           set -e
 
-          rm -rf components services backend icons dist node_modules || true
-          rm -f App.tsx index.tsx index.html vite.config.ts tsconfig.json constants.ts types.ts package.json package-lock.json README.md metadata.json || true
+          # remove old UI
+          rm -rf ./components ./services ./backend ./icons ./dist ./node_modules || true
+          rm -f ./App.tsx ./index.tsx ./index.html ./vite.config.ts ./tsconfig.json ./constants.ts ./types.ts ./package.json ./package-lock.json ./README.md ./metadata.json || true
 
-          cp -R _b2uprog/components ./components
-          cp -R _b2uprog/services ./services || true
-          cp -R _b2uprog/backend ./backend || true
-          cp -R _b2uprog/icons ./icons || true
-          cp -R _b2uprog/dist ./dist || true
+          # copy new UI
+          cp -R ./_b2uprog/components ./components
+          cp -R ./_b2uprog/services ./services || true
+          cp -R ./_b2uprog/backend ./backend || true
+          cp -R ./_b2uprog/icons ./icons || true
+          cp -R ./_b2uprog/dist ./dist || true
 
-          cp -f _b2uprog/App.tsx ./App.tsx || true
-          cp -f _b2uprog/index.tsx ./index.tsx || true
-          cp -f _b2uprog/index.html ./index.html || true
-          cp -f _b2uprog/vite.config.ts ./vite.config.ts || true
-          cp -f _b2uprog/tsconfig.json ./tsconfig.json || true
-          cp -f _b2uprog/constants.ts ./constants.ts || true
-          cp -f _b2uprog/types.ts ./types.ts || true
-          cp -f _b2uprog/package.json ./package.json || true
-          cp -f _b2uprog/package-lock.json ./package-lock.json || true
-          cp -f _b2uprog/README.md ./README.md || true
-          cp -f _b2uprog/metadata.json ./metadata.json || true
+          cp -f ./_b2uprog/App.tsx ./App.tsx || true
+          cp -f ./_b2uprog/index.tsx ./index.tsx || true
+          cp -f ./_b2uprog/index.html ./index.html || true
+          cp -f ./_b2uprog/vite.config.ts ./vite.config.ts || true
+          cp -f ./_b2uprog/tsconfig.json ./tsconfig.json || true
+          cp -f ./_b2uprog/constants.ts ./constants.ts || true
+          cp -f ./_b2uprog/types.ts ./types.ts || true
+          cp -f ./_b2uprog/package.json ./package.json || true
+          cp -f ./_b2uprog/package-lock.json ./package-lock.json || true
+          cp -f ./_b2uprog/README.md ./README.md || true
+          cp -f ./_b2uprog/metadata.json ./metadata.json || true
 
-          echo "✅ UI synced from b2uprog"
+          # IMPORTANT: don't commit embedded git repo
+          rm -rf ./_b2uprog/.git || true
 
-      # ===============================
-      # 4) Setup Node
-      # ===============================
+          echo "✅ Sync done"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      # ===============================
-      # 5) Install dependencies
-      # ===============================
-      - name: Install dependencies
+      - name: Install deps
         shell: bash
         run: |
           if [ -f package-lock.json ]; then
@@ -83,97 +73,121 @@ jobs:
             npm install
           fi
 
-      # ===============================
-      # 6) Setup Rust
-      # ===============================
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # ===============================
-      # 7) Install Tauri CLI
-      # ===============================
       - name: Install Tauri CLI
         run: npm i -D @tauri-apps/cli
 
-      # ===============================
-      # 8) Bump version (patch)
-      # ===============================
-      - name: Bump version
+      - name: Bump version (patch) in tauri.conf.json
         shell: bash
         run: |
-          node <<'NODE'
+          node - <<'NODE'
           const fs = require("fs");
-          const file = "src-tauri/tauri.conf.json";
-          const j = JSON.parse(fs.readFileSync(file, "utf8"));
-          const v = (j.version || "0.1.0").split(".").map(n => parseInt(n, 10));
-          v[2] = (v[2] || 0) + 1;
-          j.version = v.join(".");
-          fs.writeFileSync(file, JSON.stringify(j, null, 2));
-          console.log("NEW_VERSION", j.version);
+          const p = "src-tauri/tauri.conf.json";
+          const j = JSON.parse(fs.readFileSync(p,"utf8"));
+          const parts = (j.version || "0.1.0").split(".").map(n => parseInt(n,10));
+          parts[2] = (parts[2] || 0) + 1;
+          j.version = parts.join(".");
+          fs.writeFileSync(p, JSON.stringify(j, null, 2));
+          console.log("NEW_VERSION:", j.version);
           NODE
 
-      # ===============================
-      # 9) Read version
-      # ===============================
-      - name: Get version
+      - name: Read version
         id: ver
         shell: bash
         run: |
-          node <<'NODE' >> $GITHUB_OUTPUT
+          node - <<'NODE' >> "$GITHUB_OUTPUT"
           const fs = require("fs");
-          const j = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
-          console.log("version=" + j.version);
+          const j = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json","utf8"));
+          process.stdout.write("version=" + j.version);
           NODE
 
-      # ===============================
-      # 10) Build Tauri
-      # ===============================
-      - name: Build Tauri
+      - name: Build Tauri (release)
         run: npx tauri build
 
-      # ===============================
-      # 11) Sign DMG (CORRECT WAY)
-      # ===============================
+      # ✅ SIGN DMG using secrets (fix base64/newline errors)
       - name: Sign DMG
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY_B64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_B64 }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -e
+
+          DMG="$(ls -1 src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)"
+          echo "DMG=$DMG"
+
+          # write key to file safely (no newline issues)
+          echo "$TAURI_SIGNING_PRIVATE_KEY_B64" | tr -d '\n\r ' | base64 --decode > signing.key
+
+          # sign
+          npx tauri signer sign "$DMG" --private-key-path signing.key --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+
+          ls -la src-tauri/target/release/bundle/dmg || true
+
+      # ✅ CREATE latest.json automatically (optional but helpful)
+      - name: Generate latest.json
         shell: bash
         run: |
           set -e
 
-          DMG=$(ls src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)
-          echo "Signing $DMG"
+          VERSION="${{ steps.ver.outputs.version }}"
+          DMG_FILE="$(ls -1 src-tauri/target/release/bundle/dmg/*.dmg | xargs -n1 basename | head -n1)"
+          SIG_FILE="${DMG_FILE}.sig"
 
-          echo "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" > /tmp/tauri.key
+          SIG_CONTENT="$(cat "src-tauri/target/release/bundle/dmg/${SIG_FILE}")"
+          SIZE_BYTES="$(stat -f%z "src-tauri/target/release/bundle/dmg/${DMG_FILE}")"
 
-          npx tauri signer sign "$DMG" \
-            --private-key-path /tmp/tauri.key \
-            --password "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}"
+          cat > latest.json <<EOF
+          {
+            "version": "${VERSION}",
+            "notes": "Release v${VERSION}",
+            "pub_date": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "platforms": {
+              "darwin-aarch64": {
+                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${DMG_FILE}",
+                "signature": "${SIG_CONTENT}",
+                "size": ${SIZE_BYTES}
+              }
+            }
+          }
+          EOF
 
-      # ===============================
-      # 12) Commit + Tag + Push
-      # ===============================
-      - name: Commit + Tag + Push
+          cat latest.json
+
+      # ✅ COMMIT ONLY latest.json (no pushing main changes from workflow)
+      - name: Commit latest.json (local only)
         shell: bash
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
+          git add latest.json || true
+          git commit -m "chore: update latest.json for v${{ steps.ver.outputs.version }}" || true
 
-          git add -A
-          git commit -m "chore: release v${{ steps.ver.outputs.version }}" || true
-
+      # ✅ TAG ONLY (avoid non-fast-forward on main)
+      - name: Create tag
+        shell: bash
+        run: |
           git tag -f "v${{ steps.ver.outputs.version }}"
-          git push origin main
+
+      # ✅ PUSH TAG ONLY
+      - name: Push tag
+        shell: bash
+        run: |
           git push -f origin "v${{ steps.ver.outputs.version }}"
 
-      # ===============================
-      # 13) Upload GitHub Release
-      # ===============================
-      - name: Upload Release
+      # ✅ Upload Release assets (overwrite enabled)
+      - name: Upload Release (GH Release)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.version }}
           name: v${{ steps.ver.outputs.version }}
+          overwrite: true
+          fail_on_unmatched_files: false
           files: |
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/dmg/*.sig
+            latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

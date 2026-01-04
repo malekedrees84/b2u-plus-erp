@@ -1,161 +1,83 @@
-const LOCAL_BASE = "http://localhost:5050";
-const RENDER_BASE = "https://b2uprog.onrender.com";
+const getBaseUrl = () => {
+  // التحقق من المتغير البيئي أولاً
+  const envUrl = (import.meta as any)?.env?.VITE_API_URL;
+  if (envUrl) return envUrl.endsWith('/') ? envUrl.slice(0, -1) : envUrl;
 
-let cachedBase: string | null = null;
-
-// ------------------------
-// Health check
-// ------------------------
-async function isHealthy(base: string) {
-  try {
-    const r = await fetch(`${base}/health`, { method: "GET" });
-    if (!r.ok) return false;
-    const text = await r.text();
-    return text.includes('"ok":true') || text.includes('"ok": true');
-  } catch {
-    return false;
+  const h = window.location.hostname;
+  
+  // 1. بيئة التطوير المحلية
+  if (h === 'localhost' || h === '127.0.0.1') {
+    return "http://localhost:10000";
   }
-}
 
-export async function resolveApiBase() {
-  if (cachedBase) return cachedBase;
-
-  const localOk = await isHealthy(LOCAL_BASE);
-  cachedBase = localOk ? LOCAL_BASE : RENDER_BASE;
-
-  console.log("🔗 API base resolved to:", cachedBase);
-  return cachedBase;
-}
-
-// ------------------------
-// Client ID helper
-// ------------------------
-const getClientId = () => {
-  let id = localStorage.getItem("b2u_client_id");
-  if (!id) {
-    id = `c-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-    localStorage.setItem("b2u_client_id", id);
+  // 2. إذا كان يعمل من نطاق مختلف (مثل vercel أو preview)
+  // نوجهه صراحة إلى سيرفر الإنتاج على Render
+  if (!h.includes('onrender.com')) {
+    return "https://b2uprog.onrender.com";
   }
-  return id;
+
+  // 3. إذا كان يعمل من داخل نطاق Render فعلياً
+  return ""; 
 };
 
-// ------------------------
-// Core fetch helper
-// ------------------------
-async function j(path: string, options: RequestInit = {}) {
-  const base = await resolveApiBase();
-  const url = path.startsWith("http")
-    ? path
-    : `${base}${path.startsWith("/") ? "" : "/"}${path}`;
+const API_URL = getBaseUrl();
 
-  const headers: Record<string, string> = {
+async function request(url: string, options: RequestInit = {}) {
+  const currentUserStr = localStorage.getItem('b2u_user');
+  let userId = '';
+  try {
+    if (currentUserStr) userId = JSON.parse(currentUserStr).id || '';
+  } catch (e) {}
+
+  const headers: Record<string, string> = { 
     "Content-Type": "application/json",
-    "X-Client-Id": getClientId(),
-    ...(options.headers as any),
+    "X-User-Id": userId
   };
 
-  const res = await fetch(url, { ...options, headers });
+  const cleanPath = url.startsWith('/') ? url : `/${url}`;
+  const fullUrl = `${API_URL}${cleanPath}`;
+  
+  try {
+    const res = await fetch(fullUrl, { 
+      ...options, 
+      headers: { ...headers, ...(options.headers as any) } 
+    });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API Error: ${res.status} ${text}`);
+    // التأكد من أن الرد بصيغة JSON قبل محاولة قراءته
+    const contentType = res.headers.get('content-type');
+    const isJson = contentType && contentType.includes('application/json');
+    const data = isJson ? await res.json().catch(() => ({})) : null;
+
+    if (!res.ok) {
+      const errorMsg = data?.error || `API Error ${res.status} at ${cleanPath}`;
+      console.error(`❌ Request Failed [${res.status}]: ${fullUrl}`, data);
+      throw new Error(errorMsg);
+    }
+
+    return data;
+  } catch (err: any) {
+    console.error(`🚨 Network Error for ${cleanPath}:`, err.message);
+    throw err;
   }
-
-  const ct = res.headers.get("content-type") || "";
-  if (!ct.includes("application/json")) {
-    const raw = await res.text();
-    throw new Error(
-      `API returned non-JSON (${res.status}). First chars: ${raw.slice(0, 80)}`
-    );
-  }
-
-  return res.json();
 }
 
-// ------------------------
-// Normalize helper
-// ------------------------
-const normalize = (item: any) => {
-  if (!item) return item;
-
-  if (item.data && typeof item.data === "string") {
-    try {
-      const parsed = JSON.parse(item.data);
-      return { ...parsed, id: item.id, updated_at: item.updated_at };
-    } catch {
-      return item;
-    }
-  }
-
-  if (item.data && typeof item.data === "object") {
-    return { ...item.data, id: item.id, updated_at: item.updated_at };
-  }
-
-  return item;
-};
-
-// ------------------------
-// Public API
-// ------------------------
 export const api = {
-  clientId: getClientId(),
-
-  // Users
-  listUsers: () =>
-    j("/api/users").then((r) => (r.users || []).map(normalize)),
-  saveUser: (u: any) =>
-    j("/api/users", {
-      method: "POST",
-      body: JSON.stringify(u),
-    }).then((r) => normalize(r.user)),
-  deleteUser: (id: string) =>
-    j(`/api/users/${id}`, { method: "DELETE" }),
-
-  // Clients
-  listClients: () =>
-    j("/api/clients").then((r) => (r.clients || []).map(normalize)),
-  saveClient: (c: any) =>
-    j("/api/clients", {
-      method: "POST",
-      body: JSON.stringify(c),
-    }).then((r) => normalize(r.client)),
-  deleteClient: (id: string) =>
-    j(`/api/clients/${id}`, { method: "DELETE" }),
-
-  // Tasks
-  listTasks: () =>
-    j("/api/tasks").then((r) => (r.tasks || []).map(normalize)),
-  saveTask: (t: any) =>
-    j("/api/tasks", {
-      method: "POST",
-      body: JSON.stringify(t),
-    }).then((r) => normalize(r.task)),
-  deleteTask: (id: string) =>
-    j(`/api/tasks/${id}`, { method: "DELETE" }),
-
-  // Announcements
-  listAnnouncements: () =>
-    j("/api/announcements").then((r) =>
-      (r.announcements || []).map(normalize)
-    ),
-  saveAnnouncement: (a: any) =>
-    j("/api/announcements", {
-      method: "POST",
-      body: JSON.stringify(a),
-    }).then((r) => normalize(r.announcement)),
-  deleteAnnouncement: (id: string) =>
-    j(`/api/announcements/${id}`, { method: "DELETE" }),
-
-  // Transactions
-  listTransactions: () =>
-    j("/api/transactions").then((r) =>
-      (r.transactions || []).map(normalize)
-    ),
-  saveTransaction: (t: any) =>
-    j("/api/transactions", {
-      method: "POST",
-      body: JSON.stringify(t),
-    }).then((r) => normalize(r.transaction)),
-  deleteTransaction: (id: string) =>
-    j(`/api/transactions/${id}`, { method: "DELETE" }),
+  getVersion: () => request("/api/health"),
+  getSettings: () => request("/api/settings").then(r => r.settings || {}),
+  saveSettings: (s: any) => request("/api/settings", { method: "POST", body: JSON.stringify(s) }),
+  listTasks: () => request("/api/tasks").then(r => r.tasks || []),
+  saveTask: (t: any) => request("/api/tasks", { method: "POST", body: JSON.stringify(t) }).then(r => r.task),
+  updateTask: (id: string, updates: any) => request(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify(updates) }).then(r => r.task),
+  deleteTask: (id: string) => request(`/api/tasks/${id}`, { method: "DELETE" }),
+  listUsers: () => request("/api/users").then(r => r.users || []),
+  saveUser: (u: any) => request("/api/users", { method: "POST", body: JSON.stringify(u) }).then(r => r.user),
+  deleteUser: (id: string) => request(`/api/users/${id}`, { method: "DELETE" }),
+  listClients: () => request("/api/clients").then(r => r.clients || []),
+  saveClient: (c: any) => request("/api/clients", { method: "POST", body: JSON.stringify(c) }).then(r => r.client),
+  listTransactions: () => request("/api/transactions").then(r => r.transactions || []),
+  saveTransaction: (t: any) => request("/api/transactions", { method: "POST", body: JSON.stringify(t) }).then(r => r.transaction),
+  deleteTransaction: (id: string) => request(`/api/transactions/${id}`, { method: "DELETE" }),
+  listAnnouncements: () => request("/api/announcements").then(r => r.announcements || []),
+  saveAnnouncement: (a: any) => request("/api/announcements", { method: "POST", body: JSON.stringify(a) }).then(r => r.announcement),
+  deleteAnnouncement: (id: string) => request(`/api/announcements/${id}`, { method: "DELETE" }),
 };

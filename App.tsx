@@ -44,9 +44,6 @@ const INITIAL_PERMISSIONS: RolePermissions = {
   [UserRole.CLIENT]: { canCreateRequest: true, canEditRequest: false, canDeleteRequest: false, canManageUsers: false, canPostAnnouncements: false, canViewReports: false, canViewAllRequests: false, canViewInternalNotes: false, canApproveTasks: false, canPublishTasks: false, canSeeActivityLog: false, canManageFinance: false, canViewFinancials: false },
 };
 
-/** ✅ تمييز إذا احنا داخل Tauri Desktop */
-const isTauri = () => typeof window !== "undefined" && ("__TAURI_IPC__" in window);
-
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem('b2u_auth') === 'true');
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -125,45 +122,6 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-
-  // ✅ زر فحص تحديثات (Tauri Updater)
-  const handleCheckUpdates = useCallback(async () => {
-    try {
-      if (!isTauri()) {
-        alert("❌ فحص التحديثات يعمل فقط داخل تطبيق الماك (Tauri)، مش من المتصفح.");
-        return;
-      }
-
-      // lazy imports حتى ما يخرب بالويب
-      const { check } = await import("@tauri-apps/plugin-updater");
-      const { message, confirm } = await import("@tauri-apps/plugin-dialog");
-
-      await message("🔍 جاري فحص التحديثات...");
-
-      const update = await check();
-
-      if (!update) {
-        await message("✅ لا يوجد تحديثات حالياً.");
-        return;
-      }
-
-      const ok = await confirm(
-        `🚀 يوجد تحديث جديد!\n\nVersion: ${update.version}\n\nبدك تثبته الآن؟`,
-        { title: "Update Available", kind: "info" }
-      );
-
-      if (!ok) return;
-
-      await message("⬇️ جاري تنزيل التحديث...");
-      await update.downloadAndInstall();
-
-      await message("✅ تم تثبيت التحديث! رح يعيد تشغيل التطبيق الآن.");
-      // عادة Tauri بيعمل restart تلقائي بعد install
-    } catch (e: any) {
-      console.error(e);
-      alert("❌ خطأ في التحديث: " + (e?.message || e));
-    }
-  }, []);
 
   // Socket Lifecycle
   useEffect(() => {
@@ -267,23 +225,8 @@ const App: React.FC = () => {
             userPermissions={userPermissions}
           />
         </div>
-
+        
         <main className="flex-1 flex flex-col min-w-0 relative">
-          {/* ✅ زر فحص تحديثات - ثابت أعلى الصفحة */}
-          <div className="sticky top-0 z-[5000] bg-charcoal-950/90 backdrop-blur border-b border-white/5 px-4 py-3 flex items-center justify-between">
-            <div className="text-sm text-white/70">
-              {appSettings.appName}
-            </div>
-
-            <button
-              onClick={handleCheckUpdates}
-              className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 border border-white/10 text-sm"
-              title="Check for updates"
-            >
-              🔄 فحص تحديثات
-            </button>
-          </div>
-
           <div className="flex-1 overflow-y-auto custom-scrollbar">
             {currentPage === 'dashboard' && <Dashboard requests={requests} currentUser={currentUser} announcements={announcements} onNavigate={setCurrentPage} appLogo={appSettings.appLogo} />}
             {currentPage === 'mytasks' && <MyTasks requests={requests} currentUser={currentUser} onUpdateRequest={handleUpdateTask} onOpenRequest={setViewingRequest} onCreateRequest={() => setShowRequestDrawer(true)} clients={clients} />}

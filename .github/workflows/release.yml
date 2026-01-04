@@ -1,4 +1,4 @@
-name: Auto Release (Tauri) + Sync from b2uprog
+name: Auto Release (Tauri) + Sync from b2uprog (Signed)
 
 on:
   workflow_dispatch:
@@ -31,16 +31,15 @@ jobs:
         run: |
           set -e
 
-          # remove old UI
+          # remove old UI files (keep src-tauri)
           rm -rf ./components ./services ./backend ./icons ./dist ./node_modules || true
-          rm -f ./App.tsx ./index.tsx ./index.html ./vite.config.ts ./tsconfig.json ./constants.ts ./types.ts ./package.json ./package-lock.json ./README.md ./metadata.json || true
+          rm -f ./App.tsx ./index.tsx ./index.html ./vite.config.ts ./tsconfig.json ./constants.ts ./types.ts ./README.md ./metadata.json || true
 
-          # copy new UI
+          # copy from b2uprog
           cp -R ./_b2uprog/components ./components
           cp -R ./_b2uprog/services ./services || true
           cp -R ./_b2uprog/backend ./backend || true
           cp -R ./_b2uprog/icons ./icons || true
-          cp -R ./_b2uprog/dist ./dist || true
 
           cp -f ./_b2uprog/App.tsx ./App.tsx || true
           cp -f ./_b2uprog/index.tsx ./index.tsx || true
@@ -49,12 +48,10 @@ jobs:
           cp -f ./_b2uprog/tsconfig.json ./tsconfig.json || true
           cp -f ./_b2uprog/constants.ts ./constants.ts || true
           cp -f ./_b2uprog/types.ts ./types.ts || true
-          cp -f ./_b2uprog/package.json ./package.json || true
-          cp -f ./_b2uprog/package-lock.json ./package-lock.json || true
           cp -f ./_b2uprog/README.md ./README.md || true
           cp -f ./_b2uprog/metadata.json ./metadata.json || true
 
-          # IMPORTANT: don't commit embedded git repo
+          # IMPORTANT: do NOT copy _b2uprog itself into git index
           rm -rf ./_b2uprog/.git || true
 
           echo "✅ Sync done"
@@ -64,9 +61,10 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install deps
+      - name: Install dependencies (ci if lock exists)
         shell: bash
         run: |
+          set -e
           if [ -f package-lock.json ]; then
             npm ci
           else
@@ -82,14 +80,15 @@ jobs:
       - name: Bump version (patch) in tauri.conf.json
         shell: bash
         run: |
+          set -e
           node - <<'NODE'
           const fs = require("fs");
-          const p = "src-tauri/tauri.conf.json";
-          const j = JSON.parse(fs.readFileSync(p,"utf8"));
-          const parts = (j.version || "0.1.0").split(".").map(n => parseInt(n,10));
-          parts[2] = (parts[2] || 0) + 1;
-          j.version = parts.join(".");
-          fs.writeFileSync(p, JSON.stringify(j, null, 2));
+          const path = "src-tauri/tauri.conf.json";
+          const j = JSON.parse(fs.readFileSync(path,"utf8"));
+          const v = (j.version || "0.1.0").split(".").map(n=>parseInt(n,10));
+          v[2] = (v[2]||0) + 1;
+          j.version = v.join(".");
+          fs.writeFileSync(path, JSON.stringify(j, null, 2));
           console.log("NEW_VERSION:", j.version);
           NODE
 
@@ -97,87 +96,113 @@ jobs:
         id: ver
         shell: bash
         run: |
+          set -e
           node - <<'NODE' >> "$GITHUB_OUTPUT"
           const fs = require("fs");
           const j = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json","utf8"));
-          process.stdout.write("version=" + j.version);
+          console.log("version="+j.version);
           NODE
 
       - name: Build Tauri (release)
-        run: npx tauri build
+        shell: bash
+        run: |
+          set -e
+          npx tauri build
 
-      # ✅ SIGN DMG using secrets (fix base64/newline errors)
+      # =========================
+      # ✅ SIGNING (RADICAL FIX)
+      # =========================
+      - name: Write signing key file
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -e
+          # Write exactly as-is (no newlines)
+          printf "%s" "$TAURI_SIGNING_PRIVATE_KEY" > signing.key
+          echo "KEY_BYTES=$(wc -c < signing.key)"
+
       - name: Sign DMG
         shell: bash
         env:
-          TAURI_SIGNING_PRIVATE_KEY_B64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_B64 }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -e
-
           DMG="$(ls -1 src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)"
-          echo "DMG=$DMG"
-
-          # write key to file safely (no newline issues)
-          echo "$TAURI_SIGNING_PRIVATE_KEY_B64" | tr -d '\n\r ' | base64 --decode > signing.key
-
-          # sign
+          echo "Signing: $DMG"
           npx tauri signer sign "$DMG" --private-key-path signing.key --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          echo "Bundle dmg folder:"
+          ls -la src-tauri/target/release/bundle/dmg/
 
-          ls -la src-tauri/target/release/bundle/dmg || true
-
-      # ✅ CREATE latest.json automatically (optional but helpful)
-      - name: Generate latest.json
+      # =========================
+      # latest.json generation
+      # =========================
+      - name: Generate latest.json (darwin-aarch64)
         shell: bash
         run: |
           set -e
 
           VERSION="${{ steps.ver.outputs.version }}"
-          DMG_FILE="$(ls -1 src-tauri/target/release/bundle/dmg/*.dmg | xargs -n1 basename | head -n1)"
-          SIG_FILE="${DMG_FILE}.sig"
+          TAG="v${VERSION}"
+
+          DMG_FILE="$(basename "$(ls -1 src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)")"
+          SIG_FILE="$(basename "$(ls -1 src-tauri/target/release/bundle/dmg/*.sig | head -n 1)")"
 
           SIG_CONTENT="$(cat "src-tauri/target/release/bundle/dmg/${SIG_FILE}")"
-          SIZE_BYTES="$(stat -f%z "src-tauri/target/release/bundle/dmg/${DMG_FILE}")"
+
+          DMG_PATH="src-tauri/target/release/bundle/dmg/${DMG_FILE}"
+
+          # macOS stat
+          SIZE="$(stat -f%z "${DMG_PATH}")"
+
+          # ISO date
+          PUB_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
           cat > latest.json <<EOF
           {
             "version": "${VERSION}",
             "notes": "Release v${VERSION}",
-            "pub_date": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "pub_date": "${PUB_DATE}",
             "platforms": {
               "darwin-aarch64": {
-                "url": "https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${DMG_FILE}",
-                "signature": "${SIG_CONTENT}",
-                "size": ${SIZE_BYTES}
+                "url": "https://github.com/${{ github.repository }}/releases/download/${TAG}/${DMG_FILE}",
+                "signature": ${SIG_CONTENT@Q},
+                "size": ${SIZE}
               }
             }
           }
           EOF
 
+          echo "✅ latest.json created"
           cat latest.json
 
-      # ✅ COMMIT ONLY latest.json (no pushing main changes from workflow)
-      - name: Commit latest.json (local only)
+      - name: Commit release files
         shell: bash
         run: |
+          set -e
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add latest.json || true
-          git commit -m "chore: update latest.json for v${{ steps.ver.outputs.version }}" || true
 
-      # ✅ TAG ONLY (avoid non-fast-forward on main)
-      - name: Create tag
+          # IMPORTANT: ensure we don't commit embedded repo
+          rm -rf _b2uprog || true
+
+          git add -A
+          git commit -m "chore: release v${{ steps.ver.outputs.version }}" || true
+
+      - name: Tag + Push
         shell: bash
         run: |
-          git tag -f "v${{ steps.ver.outputs.version }}"
+          set -e
+          TAG="v${{ steps.ver.outputs.version }}"
+          git tag -f "$TAG"
 
-      # ✅ PUSH TAG ONLY
-      - name: Push tag
-        shell: bash
-        run: |
-          git push -f origin "v${{ steps.ver.outputs.version }}"
+          # ✅ avoid non-fast-forward issues by rebasing
+          git fetch origin main
+          git rebase origin/main || true
 
-      # ✅ Upload Release assets (overwrite enabled)
+          git push origin main
+          git push -f origin "$TAG"
+
       - name: Upload Release (GH Release)
         uses: softprops/action-gh-release@v2
         with:

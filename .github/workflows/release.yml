@@ -26,18 +26,21 @@ jobs:
           path: _b2uprog
           token: ${{ secrets.B2UPROG_TOKEN }}
 
+      # ✅ Sync UI (بدون ما نضيف _b2uprog للـ git)
       - name: Sync UI from b2uprog into b2u-plus-erp
         shell: bash
         run: |
           set -e
+
+          # امسح UI القديم
           rm -rf ./components ./services ./backend ./icons ./dist ./node_modules || true
           rm -f ./App.tsx ./index.tsx ./index.html ./vite.config.ts ./tsconfig.json ./constants.ts ./types.ts ./package.json ./package-lock.json ./README.md ./metadata.json || true
 
+          # انسخ UI الجديد
           cp -R ./_b2uprog/components ./components
           cp -R ./_b2uprog/services ./services || true
           cp -R ./_b2uprog/backend ./backend || true
           cp -R ./_b2uprog/icons ./icons || true
-          cp -R ./_b2uprog/dist ./dist || true
 
           cp -f ./_b2uprog/App.tsx ./App.tsx || true
           cp -f ./_b2uprog/index.tsx ./index.tsx || true
@@ -51,6 +54,9 @@ jobs:
           cp -f ./_b2uprog/README.md ./README.md || true
           cp -f ./_b2uprog/metadata.json ./metadata.json || true
 
+          # مهم: لا تخلّي _b2uprog ينضاف للـ git
+          rm -rf ./_b2uprog
+
           echo "✅ Sync done"
 
       - name: Setup Node
@@ -58,8 +64,7 @@ jobs:
         with:
           node-version: 20
 
-      # ✅ حل مشكلة npm ci
-      - name: Install dependencies (ci if lock exists)
+      - name: Install dependencies
         shell: bash
         run: |
           if [ -f package-lock.json ]; then
@@ -71,10 +76,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Tauri CLI
-        run: npm i -D @tauri-apps/cli
-
+      # 🔥 bump version (patch) داخل tauri.conf.json فقط في ال runner (بدون commit)
       - name: Bump version (patch)
+        id: bump
         shell: bash
         run: |
           node - <<'NODE'
@@ -85,54 +89,84 @@ jobs:
           v[2] = (v[2]||0)+1;
           j.version = v.join(".");
           fs.writeFileSync(path, JSON.stringify(j,null,2));
-          console.log("NEW_VERSION:", j.version);
-          NODE
-
-      - name: Get version
-        id: ver
-        shell: bash
-        run: |
-          node - <<'NODE' >> $GITHUB_OUTPUT
-          const fs = require("fs");
-          const j = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json","utf8"));
           console.log("version="+j.version);
-          NODE
+          NODE | tee -a "$GITHUB_OUTPUT"
+
+      - name: Build frontend
+        run: npm run build
 
       - name: Build Tauri (release)
         run: npx tauri build
 
-      - name: Commit + Tag + Push
+      # ✅ لاقي dmg
+      - name: Locate DMG
+        id: dmg
         shell: bash
         run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
+          DMG_PATH=$(ls -1 src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)
+          echo "dmg=$DMG_PATH" >> $GITHUB_OUTPUT
+          echo "DMG_PATH=$DMG_PATH"
 
-          git add -A
-          git commit -m "chore: release v${{ steps.ver.outputs.version }}" || true
+      # ✅ توقيع dmg باستخدام secrets (بدون export غلط)
+      - name: Sign DMG
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          npx tauri signer sign "${{ steps.dmg.outputs.dmg }}" \
+            --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
+            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
 
-          # ✅ إذا التاغ موجود ما يعمل فشل (نحدثه)
-          git tag -f "v${{ steps.ver.outputs.version }}"
+      # ✅ توليد latest.json كـ asset للـ release
+      - name: Generate latest.json
+        id: latest
+        shell: bash
+        run: |
+          VERSION="${{ steps.bump.outputs.version }}"
+          TAG="v${VERSION}"
 
-          git push origin main
-          git push -f origin "v${{ steps.ver.outputs.version }}"
+          DMG_FILE=$(basename "${{ steps.dmg.outputs.dmg }}")
+          DMG_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${DMG_FILE}"
 
+          SIG_PATH="${{ steps.dmg.outputs.dmg }}.sig"
+          SIG_CONTENT=$(cat "$SIG_PATH")
+
+          cat > latest.json <<EOF
+          {
+            "version": "${VERSION}",
+            "notes": "Release ${TAG}",
+            "pub_date": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "platforms": {
+              "darwin-aarch64": {
+                "url": "${DMG_URL}",
+                "signature": ${SIG_CONTENT@Q},
+                "size": $(stat -f%z "${{ steps.dmg.outputs.dmg }}")
+              }
+            }
+          }
+          EOF
+
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+
+      # ✅ Create Tag (بدون push main)
+      - name: Create and push tag only
+        shell: bash
+        run: |
+          git tag "${{ steps.latest.outputs.TAG }}"
+          git push origin "${{ steps.latest.outputs.TAG }}"
+
+      # ✅ Release + upload فقط الملفات المهمة
       - name: Upload Release (GH Release)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.ver.outputs.version }}
-          name: v${{ steps.ver.outputs.version }}
-
-          # ✅ السطر “النظيف” لحل مشكلة Not Found / تحديث الأصول
+          tag_name: ${{ steps.latest.outputs.TAG }}
+          name: ${{ steps.latest.outputs.TAG }}
           overwrite: true
-
-          # ✅ لا تفشل لو ملف مش موجود (مثلاً مرات ما يطلع .sig)
           fail_on_unmatched_files: false
-
-          # ✅ ارفع فقط الملفات المهمة للتحديث
           files: |
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/dmg/*.sig
-            src-tauri/target/release/app
-
+            latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

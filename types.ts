@@ -1,4 +1,3 @@
-
 export enum UserRole {
   ADMIN = 'المدير العام',
   SUPERVISOR = 'مشرف',
@@ -120,11 +119,10 @@ export interface AppNotification {
   type: ToastType;
   context: string;
   entityId?: string;
-  targetUserId?: string | string[] | "all"; // ✅ دعم الاستهداف الدقيق
-  isPassive?: boolean; // ✅ هل الإشعار صامت أم يظهر بوب آب؟
+  targetUserId?: string | string[] | "all";
+  isPassive?: boolean;
 }
 
-// Fix for missing Comment type in ProductionRequest
 export interface Comment {
   id: string;
   userId: string;
@@ -133,14 +131,12 @@ export interface Comment {
   isSystem?: boolean;
 }
 
-// Fix for missing ChecklistItem type in ProductionRequest
 export interface ChecklistItem {
   id: string;
   text: string;
   completed: boolean;
 }
 
-// Fix for missing Attachment member error
 export interface Attachment {
   id: string;
   name: string;
@@ -150,7 +146,6 @@ export interface Attachment {
   uploadedAt: string;
 }
 
-// Fix for missing WorkLog member error
 export interface WorkLog {
   id: string;
   userId: string;
@@ -160,7 +155,6 @@ export interface WorkLog {
   note: string;
 }
 
-// Fix for missing StatusHistoryEntry member error
 export interface StatusHistoryEntry {
   status: RequestStatus;
   timestamp: string;
@@ -191,10 +185,10 @@ export interface ProductionRequest {
   creatorId?: string;
   publishedAt?: string;
   lastActivity?: string;
-  watchers?: string[]; // ✅ مراقبين للمهمة
-  tags?: string[]; // Fix for missing tags error in RequestDrawer
-  isRecurring?: boolean; // Fix for missing isRecurring error in several components
-  recurrence?: RecurrencePattern; // Fix for missing recurrence error in RequestDrawer
+  watchers?: string[];
+  tags?: string[];
+  isRecurring?: boolean;
+  recurrence?: RecurrencePattern;
 }
 
 export type ToastType = 'success' | 'error' | 'info';
@@ -203,9 +197,11 @@ export interface AppSettings {
   appName: string;
   appLogo: string;
   primaryColor: string;
+  loginHeadline?: string;
+  loginSubtext?: string;
+  loginBgColor?: string;
 }
 
-// Fix for missing Transaction and related types in FinanceDashboard
 export type TransactionType = 'Income' | 'Expense';
 export type PaymentStatus = 'Paid' | 'Pending' | 'Overdue';
 export type PaymentMethod = 'Cash' | 'Check' | 'Credit Card' | 'Bank Transfer' | 'PayPal';
@@ -225,7 +221,6 @@ export interface Transaction {
   notes?: string;
 }
 
-// Fix for missing AnnouncementSlide type in AnnouncementsPage
 export interface AnnouncementSlide {
   id: string;
   image: string;
@@ -233,7 +228,6 @@ export interface AnnouncementSlide {
   content: string;
 }
 
-// Fix for missing Announcement member error
 export interface Announcement {
   id: string;
   title: string;
@@ -251,8 +245,5 @@ export interface Announcement {
   link?: string;
 }
 
-// Fix for missing LoginConfig member error
 export interface LoginConfig {}
-
-// Fix for missing WelcomeConfig member error
 export interface WelcomeConfig {}

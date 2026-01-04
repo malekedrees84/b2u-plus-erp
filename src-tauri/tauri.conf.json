@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "b2u-plus-erp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.b2uplus.erp",
 
   "build": {
@@ -22,9 +22,7 @@
         "fullscreen": false
       }
     ],
-    "security": {
-      "csp": null
-    }
+    "security": { "csp": null }
   },
 
   "bundle": {
@@ -45,10 +43,8 @@
       "endpoints": [
         "https://github.com/malekedrees84/b2u-plus-erp/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM3QjFGN0NCMUYzQUJGNTEKUldSUnZ6b2Z5L2V4TjgyNE9qdVdxQk0vQ21RZ3VPdU0wMEdYellXczFKN1BXaXpxVm5lQjdNZWwK",
-      "windows": {
-        "installMode": "passive"
-      }
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJFRjY5NUI3N0RGQTU4OTEKUldTUldQcDl0NVgydm9RcUtRR2J1OU9qUVp0Z2xmcHhCVm9NRWR6L0ZFa0lDTFYrbmZ0anVNMGoK",
+      "windows": { "installMode": "passive" }
     }
   }
 }

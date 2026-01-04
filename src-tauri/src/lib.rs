@@ -1,13 +1,11 @@
-#[tauri::command]
-fn ping() -> String {
-  "pong".to_string()
-}
+use tauri::{self, Manager};
 
 pub fn run() {
   tauri::Builder::default()
+    // ✅ Dialog plugin
     .plugin(tauri_plugin_dialog::init())
+    // ✅ Updater plugin
     .plugin(tauri_plugin_updater::Builder::new().build())
-    .invoke_handler(tauri::generate_handler![ping])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

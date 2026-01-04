@@ -44,6 +44,9 @@ const INITIAL_PERMISSIONS: RolePermissions = {
   [UserRole.CLIENT]: { canCreateRequest: true, canEditRequest: false, canDeleteRequest: false, canManageUsers: false, canPostAnnouncements: false, canViewReports: false, canViewAllRequests: false, canViewInternalNotes: false, canApproveTasks: false, canPublishTasks: false, canSeeActivityLog: false, canManageFinance: false, canViewFinancials: false },
 };
 
+/** ✅ تمييز إذا احنا داخل Tauri Desktop */
+const isTauri = () => typeof window !== "undefined" && ("__TAURI_IPC__" in window);
+
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem('b2u_auth') === 'true');
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -89,181 +92,132 @@ const App: React.FC = () => {
     if (audioUnlocked.current) return;
     const a = new Audio(NOTIFICATION_SOUND);
     a.volume = 0.01;
-    a.play()
-      .then(() => { audioUnlocked.current = true; console.log("🔊 Audio Context Unlocked"); })
-      .catch(() => {});
+    a.play().then(() => { audioUnlocked.current = true; }).catch(() => {});
   }, []);
 
   const playSound = useCallback((type: 'notif' | 'msg' = 'notif') => {
     if (!audioUnlocked.current) return;
-    const sound = new Audio(type === 'msg' ? MESSAGE_SOUND : NOTIFICATION_SOUND);
-    sound.play().catch(e => console.warn("Sound blocked", e));
+    new Audio(type === 'msg' ? MESSAGE_SOUND : NOTIFICATION_SOUND).play().catch(() => {});
   }, []);
-
-  const handleNotificationClick = useCallback((n: AppNotification) => {
-    if (n.entityId) {
-      const req = requests.find(r => r.id === n.entityId);
-      if (req) {
-          setViewingRequest(req);
-          setCurrentPage('requests');
-      }
-    }
-    if (n.context === 'chat') {
-        setShowTeamChat(true);
-    }
-    setShowNotificationPanel(false);
-    setActivePopupNotification(null);
-    // Mark as read
-    setNotifications(prev => {
-        const updated = prev.map(item => item.id === n.id ? { ...item, isRead: true } : item);
-        localStorage.setItem('b2u_notifications', JSON.stringify(updated));
-        return updated;
-    });
-  }, [requests]);
 
   const fetchData = useCallback(async () => {
     setIsSyncing(true);
     try {
-      const [u, c, t, tx, an] = await Promise.all([
+      const [u, c, t, tx, an, settings] = await Promise.all([
         api.listUsers(), 
         api.listClients(), 
         api.listTasks(),
         api.listTransactions(),
-        api.listAnnouncements()
+        api.listAnnouncements(),
+        api.getSettings()
       ]);
       setUsers(u || []); 
       setClients(c || []); 
       setRequests(t || []);
       setTransactions(tx || []);
       setAnnouncements(an || []);
+      if (settings?.appName) setAppSettings(settings);
+      if (settings?.rolePermissions) setRolePermissions(settings.rolePermissions);
     } catch (e) { 
-      console.error("Data fetch error:", e); 
+      console.error("Fetch error:", e); 
     }
     setIsSyncing(false);
   }, []);
 
-  useEffect(() => { if (isAuthenticated) fetchData(); }, [isAuthenticated, fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ✅ زر فحص تحديثات (Tauri Updater)
+  const handleCheckUpdates = useCallback(async () => {
+    try {
+      if (!isTauri()) {
+        alert("❌ فحص التحديثات يعمل فقط داخل تطبيق الماك (Tauri)، مش من المتصفح.");
+        return;
+      }
+
+      // lazy imports حتى ما يخرب بالويب
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const { message, confirm } = await import("@tauri-apps/plugin-dialog");
+
+      await message("🔍 جاري فحص التحديثات...");
+
+      const update = await check();
+
+      if (!update) {
+        await message("✅ لا يوجد تحديثات حالياً.");
+        return;
+      }
+
+      const ok = await confirm(
+        `🚀 يوجد تحديث جديد!\n\nVersion: ${update.version}\n\nبدك تثبته الآن؟`,
+        { title: "Update Available", kind: "info" }
+      );
+
+      if (!ok) return;
+
+      await message("⬇️ جاري تنزيل التحديث...");
+      await update.downloadAndInstall();
+
+      await message("✅ تم تثبيت التحديث! رح يعيد تشغيل التطبيق الآن.");
+      // عادة Tauri بيعمل restart تلقائي بعد install
+    } catch (e: any) {
+      console.error(e);
+      alert("❌ خطأ في التحديث: " + (e?.message || e));
+    }
+  }, []);
 
   // Socket Lifecycle
   useEffect(() => {
-    if (!isAuthenticated || !currentUser) return;
     const socket = getSocket();
-    
-    socket.emit("client:hello", { userId: currentUser.id });
+    if (currentUser?.id) socket.emit("client:hello", { userId: currentUser.id });
 
-    const onNotificationNew = (n: any) => {
-      if (!n) return;
+    socket.on("settings:sync", (data: { settings: AppSettings, rolePermissions: RolePermissions }) => {
+        if (data.settings) setAppSettings(data.settings);
+        if (data.rolePermissions) setRolePermissions(data.rolePermissions);
+    });
+
+    socket.on("notification:new", (n: AppNotification) => {
       const myId = currentUser?.id;
       const target = n.targetUserId;
       const isForMe = target === "all" || target === myId || (Array.isArray(target) && myId && target.includes(myId));
       if (!isForMe) return;
 
-      setNotifications(prev => {
-        const updated = [n, ...prev].filter((v,i,a) => a.findIndex(t => t.id === v.id) === i).slice(0, 50);
-        localStorage.setItem('b2u_notifications', JSON.stringify(updated));
-        return updated;
-      });
-      
-      if (n.isPassive !== true) {
+      setNotifications(prev => [n, ...prev].slice(0, 50));
+      if (!n.isPassive) {
         setActivePopupNotification(n);
         playSound('notif');
       }
-    };
+    });
 
-    const onChatMessage = (msg: ChatMessage) => {
-        if (!msg) return;
-        setMessages(prev => {
-            const updated = [...prev, msg].slice(-100);
-            localStorage.setItem('b2u_chat_history', JSON.stringify(updated));
-            return updated;
-        });
-
-        // Trigger notification if not in chat
-        if (!showTeamChat && msg.senderId !== currentUser.id) {
-            const sender = users.find(u => u.id === msg.senderId);
-            const notifId = `chat-${Date.now()}`;
-            const n: AppNotification = {
-                id: notifId,
-                title: sender?.name || "رسالة جديدة",
-                message: msg.text || "أرسل ملفاً جديداً",
-                timestamp: new Date().toISOString(),
-                isRead: false,
-                type: 'info',
-                context: 'chat',
-                entityId: msg.senderId
-            };
-            setActivePopupNotification(n);
-            setNotifications(prev => [n, ...prev].slice(0, 50));
+    socket.on("chat:message", (msg: ChatMessage) => {
+        setMessages(prev => [...prev, msg].slice(-100));
+        if (!showTeamChat && msg.senderId !== currentUser?.id) {
             playSound('msg');
         }
-    };
+    });
 
-    socket.on("notification:new", onNotificationNew);
-    socket.on("chat:message", onChatMessage);
-    
     socket.on("task:sync", (updatedTask: ProductionRequest) => {
         setRequests(prev => prev.map(r => r.id === updatedTask.id ? updatedTask : r));
         if (viewingRequest?.id === updatedTask.id) setViewingRequest(updatedTask);
     });
 
     return () => { 
+        socket.off("settings:sync");
         socket.off("notification:new"); 
         socket.off("chat:message");
         socket.off("task:sync"); 
     };
-  }, [isAuthenticated, currentUser, viewingRequest, playSound, showTeamChat, users]);
+  }, [currentUser, showTeamChat, playSound, viewingRequest]);
 
   const handleUpdateTask = async (task: ProductionRequest) => {
-      const isNew = !requests.find(r => r.id === task.id);
-      const oldStatus = requests.find(r => r.id === task.id)?.status;
-      
       const saved = await api.saveTask(task);
       setRequests(prev => prev.find(r => r.id === saved.id) ? prev.map(r => r.id === saved.id ? saved : r) : [saved, ...prev]);
       getSocket().emit("task:update", saved);
-
-      // --- Notification Logic ---
-      if (isNew && saved.assigneeId !== currentUser?.id) {
-          getSocket().emit("notification:create", { 
-              notification: {
-                id: `notif-${Date.now()}`,
-                title: "مهمة جديدة مسندة إليك",
-                message: `قام ${currentUser?.name} بإسناد مهمة: ${saved.title}`,
-                timestamp: new Date().toISOString(),
-                isRead: false,
-                type: 'success',
-                context: "request",
-                entityId: saved.id,
-                targetUserId: saved.assigneeId
-              }
-          });
-      } else if (!isNew && oldStatus !== saved.status) {
-          const targetIds = [saved.assigneeId, saved.supervisorId, saved.creatorId].filter(id => id && id !== currentUser?.id);
-          if (targetIds.length > 0) {
-            getSocket().emit("notification:create", { 
-              notification: {
-                id: `notif-${Date.now()}`,
-                title: "تحديث حالة مهمة",
-                message: `المهمة "${saved.title}" أصبحت الآن: ${saved.status}`,
-                timestamp: new Date().toISOString(),
-                isRead: false,
-                type: 'info',
-                context: "request",
-                entityId: saved.id,
-                targetUserId: targetIds
-              }
-            });
-          }
-      }
       setActiveToast({ message: "تم تحديث المهمة بنجاح", type: "success" });
   };
 
   const handleSendMessage = (msg: ChatMessage) => {
       getSocket().emit("chat:message", msg);
-      setMessages(prev => {
-          const updated = [...prev, msg].slice(-100);
-          localStorage.setItem('b2u_chat_history', JSON.stringify(updated));
-          return updated;
-      });
+      setMessages(prev => [...prev, msg].slice(-100));
   };
 
   const handleUpdateUser = async (u: User) => {
@@ -285,7 +239,7 @@ const App: React.FC = () => {
       <HashRouter>
         <Routes>
           <Route path="/register" element={<RegisterPage appName={appSettings.appName} appLogo={appSettings.appLogo} />} />
-          <Route path="*" element={<LoginPage users={users} appLogo={appSettings.appLogo} appName={appSettings.appName} onLogin={(u) => { setCurrentUser(u); setIsAuthenticated(true); localStorage.setItem('b2u_auth', 'true'); localStorage.setItem('b2u_user', JSON.stringify(u)); }} onForceSync={fetchData} loginConfig={{} as any} />} />
+          <Route path="*" element={<LoginPage users={users} appLogo={appSettings.appLogo} appName={appSettings.appName} appSettings={appSettings} onLogin={(u) => { setCurrentUser(u); setIsAuthenticated(true); localStorage.setItem('b2u_auth', 'true'); localStorage.setItem('b2u_user', JSON.stringify(u)); }} onForceSync={fetchData} loginConfig={{} as any} />} />
         </Routes>
       </HashRouter>
     );
@@ -313,8 +267,23 @@ const App: React.FC = () => {
             userPermissions={userPermissions}
           />
         </div>
-        
+
         <main className="flex-1 flex flex-col min-w-0 relative">
+          {/* ✅ زر فحص تحديثات - ثابت أعلى الصفحة */}
+          <div className="sticky top-0 z-[5000] bg-charcoal-950/90 backdrop-blur border-b border-white/5 px-4 py-3 flex items-center justify-between">
+            <div className="text-sm text-white/70">
+              {appSettings.appName}
+            </div>
+
+            <button
+              onClick={handleCheckUpdates}
+              className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 border border-white/10 text-sm"
+              title="Check for updates"
+            >
+              🔄 فحص تحديثات
+            </button>
+          </div>
+
           <div className="flex-1 overflow-y-auto custom-scrollbar">
             {currentPage === 'dashboard' && <Dashboard requests={requests} currentUser={currentUser} announcements={announcements} onNavigate={setCurrentPage} appLogo={appSettings.appLogo} />}
             {currentPage === 'mytasks' && <MyTasks requests={requests} currentUser={currentUser} onUpdateRequest={handleUpdateTask} onOpenRequest={setViewingRequest} onCreateRequest={() => setShowRequestDrawer(true)} clients={clients} />}
@@ -338,14 +307,10 @@ const App: React.FC = () => {
           isOpen={showNotificationPanel} 
           onClose={() => setShowNotificationPanel(false)} 
           notifications={notifications} 
-          onMarkRead={(id) => setNotifications(prev => {
-              const updated = prev.map(n => n.id === id ? {...n, isRead: true} : n);
-              localStorage.setItem('b2u_notifications', JSON.stringify(updated));
-              return updated;
-          })} 
-          onClearAll={() => { setNotifications([]); localStorage.setItem('b2u_notifications', '[]'); }} 
+          onMarkRead={(id) => setNotifications(prev => prev.map(n => n.id === id ? {...n, isRead: true} : n))} 
+          onClearAll={() => setNotifications([])} 
           onDeleteNotification={(id) => setNotifications(prev => prev.filter(n => n.id !== id))} 
-          onNotificationClick={handleNotificationClick} 
+          onNotificationClick={(n) => { setViewingRequest(requests.find(r => r.id === n.entityId) || null); setShowNotificationPanel(false); }} 
           clients={clients} requests={requests} users={users} 
         />
 
@@ -364,7 +329,6 @@ const App: React.FC = () => {
         <NotificationPopup 
             notification={activePopupNotification} 
             onClose={() => setActivePopupNotification(null)} 
-            onAction={() => activePopupNotification && handleNotificationClick(activePopupNotification)} 
         />
 
         {viewingRequest && <RequestDetail request={viewingRequest} onClose={() => setViewingRequest(null)} currentUser={currentUser} onUpdate={handleUpdateTask} users={users} clients={clients} userPermissions={userPermissions} />}

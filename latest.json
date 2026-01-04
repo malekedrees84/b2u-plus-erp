@@ -1,0 +1,13 @@
+{
+  "version": "0.1.1",
+  "notes": "Release v0.1.1",
+  "pub_date": "2026-01-04T10:00:00Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "url": "https://github.com/malekedrees84/b2u-plus-erp/releases/download/v0.1.1/b2u-plus-erp_0.1.1_aarch64.dmg",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTUldQcDl0NVgydnBXV1JxbjNDN1dkOTFvNEtMVTVCQmNMZ0JiNURXRFNiR2pSYkkrLzVnVDRPQWNhS1M1T01manUzRUtSdldyaUhCSGpZVVNzSWhmT3pVS1pwUnF1bHdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzY3NTIyNjAyCWZpbGU6YjJ1LXBsdXMtZXJwXzAuMS4xX2FhcmNoNjQuZG1nCmFTV0JZcjJucjNnbElNTjVNRDI2YnJmZlc5cVg0V250S2RWU0luN3lGRUVQUVplT1lkYmlHcnhtMGZ0cWl5eHlUTEhldVExSjJiS05EVUs3RFRhUkJRPT0K"
+      ,
+      "size": 5244995
+    }
+  }
+}

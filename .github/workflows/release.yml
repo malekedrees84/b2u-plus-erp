@@ -2,17 +2,15 @@ name: Auto Release (Tauri)
 
 on:
   push:
-    branches: [ "main" ]
-
-permissions:
-  contents: write
+    tags:
+      - "v*"
 
 jobs:
-  build-and-release:
+  release:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Setup Node
@@ -23,22 +21,19 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install frontend deps
+        run: npm install
 
-      # مهم: لازم تكون سكربتات tauri:build موجودة في package.json
-      # "tauri:build": "tauri build"
       - name: Build frontend
         run: npm run build
 
-      - name: Tauri build + create GitHub Release assets
-        uses: tauri-apps/tauri-action@v0
+      - name: Build Tauri app
+        run: npx tauri build
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/release/bundle/**/* 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-        with:
-          # مهم: لازم يكون عندك version صحيح داخل src-tauri/tauri.conf.json
-          tagName: v__VERSION__
-          releaseName: "v__VERSION__"
-          releaseBody: "Auto release v

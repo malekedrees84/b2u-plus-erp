@@ -16,17 +16,8 @@ const rootDir = path.join(__dirname, "..");
 
 const app = express();
 
-// 1. الوسطاء الأساسيين
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: '10mb' }));
-
-// 2. مراقب الطلبات للتشخيص
-app.use((req, res, next) => {
-  if (req.url.startsWith('/api')) {
-    console.log(`[API LOG] ${new Date().toISOString()} | ${req.method} ${req.url}`);
-  }
-  next();
-});
+app.use(express.json({ limit: '20mb' }));
 
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {
@@ -38,7 +29,6 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
 });
 
-// تهيئة قاعدة البيانات
 const initDB = async () => {
   const tables = ['tasks', 'users', 'clients', 'transactions', 'announcements', 'settings'];
   for (const table of tables) {
@@ -67,7 +57,6 @@ async function upsert(table, obj) {
   return obj;
 }
 
-// السوكيت
 io.on("connection", (socket) => {
   socket.on("client:hello", (data) => data?.userId && socket.join(data.userId));
   socket.on("settings:update", (data) => io.emit("settings:sync", data));
@@ -75,10 +64,10 @@ io.on("connection", (socket) => {
   socket.on("chat:message", (msg) => io.emit("chat:message", msg));
 });
 
-// --- راوتر الـ API (الأولوية القصوى) ---
+// راوتر الـ API
 const apiRouter = express.Router();
 
-apiRouter.get("/health", (req, res) => res.json({ ok: true, status: "online" }));
+apiRouter.get("/health", (req, res) => res.json({ ok: true }));
 
 apiRouter.get("/settings", async (req, res) => {
   try {
@@ -113,24 +102,15 @@ apiRouter.post("/transactions", async (req, res) => res.json({ ok: true, transac
 apiRouter.get("/announcements", async (req, res) => res.json({ ok: true, announcements: await list("announcements") }));
 apiRouter.post("/announcements", async (req, res) => res.json({ ok: true, announcement: await upsert("announcements", req.body) }));
 
-// تثبيت الراوتر
 app.use("/api", apiRouter);
 
-// معالج 404 صريح للـ API لمنع إرجاع HTML بدلاً من JSON
-app.use("/api/*", (req, res) => {
-  res.status(404).json({ ok: false, error: `المسار ${req.originalUrl} غير موجود على الخادم` });
-});
-
-// --- معالجة الملفات الثابتة (Frontend) ---
+// الملفات الثابتة
 const distPath = path.join(rootDir, "dist");
 app.use(express.static(distPath));
 app.use(express.static(rootDir));
 
-// SPA Fallback
 app.get("*", (req, res) => {
-  // الحماية من إرسال HTML لطلبات الـ API التائهة
-  if (req.url.startsWith('/api')) return; 
-
+  if (req.url.startsWith('/api')) return res.status(404).json({ error: 'Not found' });
   res.sendFile(path.join(distPath, "index.html"), (err) => {
     if (err) res.sendFile(path.join(rootDir, "index.html"));
   });
@@ -138,6 +118,6 @@ app.get("*", (req, res) => {
 
 const port = process.env.PORT || 10000;
 server.listen(port, "0.0.0.0", () => {
-  console.log(`🚀 B2U Server is active on port ${port}`);
+  console.log(`🚀 Server on port ${port}`);
   initDB();
 });

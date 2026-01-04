@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { User as UserType, UserRole, LoginConfig, AppSettings } from '../types';
-// Import XCircle from lucide-react
 import { Loader2, ShieldCheck, Lock, User as UserIcon, RefreshCw, Sparkles, XCircle } from 'lucide-react';
 import { MOCK_USERS } from '../constants';
 
@@ -11,16 +10,16 @@ interface LoginPageProps {
   appLogo: string;
   appName: string;
   loginConfig: LoginConfig;
-  appSettings?: AppSettings; // الإعدادات الديناميكية للمدير
+  appSettings?: AppSettings;
 }
 
-const LoginPage: React.FC<LoginPageProps> = ({ onLogin, onForceSync, users, appLogo, appName, appSettings }) => {
+const LoginPage: React.FC<LoginPageProps> = ({ onLogin, users, appLogo, appName, appSettings }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // استخلاص الإعدادات المخصصة أو استخدام الافتراضيات
+  // استخلاص الإعدادات المخصصة من المدير العام
   const customHeadline = appSettings?.loginHeadline || appName;
   const customSubtext = appSettings?.loginSubtext || 'Professional Enterprise Flow';
   const customBg = appSettings?.loginBgColor || '#020617';
@@ -95,7 +94,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, onForceSync, users, appL
             </div>
 
             <h1 className="text-3xl md:text-5xl font-black text-white mb-3 tracking-tighter text-center">{customHeadline}</h1>
-            <p className="text-zinc-500 text-[10px] md:text-xs font-black tracking-[0.3em] uppercase mb-12 opacity-60 text-center">{customSubtext}</p>
+            <p className="text-zinc-500 text-[10px] md:text-xs font-black tracking-[0.3em] uppercase mb-12 opacity-60 text-center leading-relaxed">{customSubtext}</p>
 
             <form onSubmit={handleLogin} className="w-full space-y-4">
                 <div className="relative group">
@@ -127,7 +126,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, onForceSync, users, appL
                 
                 {error && (
                   <div className="bg-red-500/10 border border-red-500/20 p-4 rounded-xl animate-slide-up flex items-center gap-3">
-                    {/* Fixed: Use imported XCircle */}
                     <XCircle size={18} className="text-red-500" />
                     <p className="text-red-400 text-xs font-bold leading-relaxed">{error}</p>
                   </div>
@@ -147,7 +145,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, onForceSync, users, appL
                     ) : (
                       <>
                         <ShieldCheck className="w-5 h-5" />
-                        <span>دخول آمن</span>
+                        <span>دخول آمن للنظام</span>
                       </>
                     )}
                 </button>
@@ -155,7 +153,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, onForceSync, users, appL
 
             <div className="mt-16 flex items-center gap-2 opacity-20">
                 <Sparkles size={12} className="text-white"/>
-                <p className="text-[9px] font-black text-white uppercase tracking-[0.4em]">B2U PLUS SECURE OS V3.0</p>
+                <p className="text-[9px] font-black text-white uppercase tracking-[0.4em]">B2U PLUS SECURE OS V3.1</p>
             </div>
         </div>
     </div>

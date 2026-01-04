@@ -8,9 +8,6 @@ on:
 permissions:
   contents: write
 
-permissions:
-  contents: write
-
 jobs:
   release:
     runs-on: macos-latest
@@ -29,10 +26,10 @@ jobs:
           path: _b2uprog
           token: ${{ secrets.B2UPROG_TOKEN }}
 
-      # ✅ Sync UI files from b2uprog into this repo
       - name: Sync UI from b2uprog into b2u-plus-erp
+        shell: bash
         run: |
-          shopt -s extglob
+          set -e
           rm -rf ./components ./services ./backend ./icons ./dist ./node_modules || true
           rm -f ./App.tsx ./index.tsx ./index.html ./vite.config.ts ./tsconfig.json ./constants.ts ./types.ts ./package.json ./package-lock.json ./README.md ./metadata.json || true
 
@@ -54,14 +51,22 @@ jobs:
           cp -f ./_b2uprog/README.md ./README.md || true
           cp -f ./_b2uprog/metadata.json ./metadata.json || true
 
+          echo "✅ Sync done"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: "npm"
 
-      - name: Install dependencies
-        run: npm ci
+      # ✅ حل مشكلة npm ci
+      - name: Install dependencies (ci if lock exists)
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -69,8 +74,8 @@ jobs:
       - name: Install Tauri CLI
         run: npm i -D @tauri-apps/cli
 
-      # 🔥 Auto bump version (patch) in tauri.conf.json
       - name: Bump version (patch)
+        shell: bash
         run: |
           node - <<'NODE'
           const fs = require("fs");
@@ -83,44 +88,51 @@ jobs:
           console.log("NEW_VERSION:", j.version);
           NODE
 
-      - name: Build Tauri (release)
-        run: npx tauri build
-
-<<<<<<< HEAD
       - name: Get version
         id: ver
+        shell: bash
         run: |
-          node - <<'NODE'
+          node - <<'NODE' >> $GITHUB_OUTPUT
           const fs = require("fs");
           const j = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json","utf8"));
           console.log("version="+j.version);
-          NODE >> $GITHUB_OUTPUT
+          NODE
 
-      - name: Create Tag
+      - name: Build Tauri (release)
+        run: npx tauri build
+
+      - name: Commit + Tag + Push
+        shell: bash
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
+
           git add -A
           git commit -m "chore: release v${{ steps.ver.outputs.version }}" || true
-          git tag "v${{ steps.ver.outputs.version }}"
-          git push origin main --tags
+
+          # ✅ إذا التاغ موجود ما يعمل فشل (نحدثه)
+          git tag -f "v${{ steps.ver.outputs.version }}"
+
+          git push origin main
+          git push -f origin "v${{ steps.ver.outputs.version }}"
 
       - name: Upload Release (GH Release)
-=======
-      # ✅ ارفع فقط ملفات الريليز المهمة (بدل bundle/**/*)
-      - name: Upload release assets
->>>>>>> ea97040 (ci: fix tauri release workflow)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.ver.outputs.version }}
           name: v${{ steps.ver.outputs.version }}
+
+          # ✅ السطر “النظيف” لحل مشكلة Not Found / تحديث الأصول
+          overwrite: true
+
+          # ✅ لا تفشل لو ملف مش موجود (مثلاً مرات ما يطلع .sig)
+          fail_on_unmatched_files: false
+
+          # ✅ ارفع فقط الملفات المهمة للتحديث
           files: |
-<<<<<<< HEAD
-            src-tauri/target/release/bundle/**/*
-=======
             src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/dmg/*.dmg.sig
-            latest.json
->>>>>>> ea97040 (ci: fix tauri release workflow)
+            src-tauri/target/release/bundle/dmg/*.sig
+            src-tauri/target/release/app
+
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

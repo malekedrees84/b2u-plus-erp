@@ -26,17 +26,14 @@ jobs:
           path: _b2uprog
           token: ${{ secrets.B2UPROG_TOKEN }}
 
-      # ✅ Sync UI (بدون ما نضيف _b2uprog للـ git)
       - name: Sync UI from b2uprog into b2u-plus-erp
         shell: bash
         run: |
           set -e
 
-          # امسح UI القديم
           rm -rf ./components ./services ./backend ./icons ./dist ./node_modules || true
           rm -f ./App.tsx ./index.tsx ./index.html ./vite.config.ts ./tsconfig.json ./constants.ts ./types.ts ./package.json ./package-lock.json ./README.md ./metadata.json || true
 
-          # انسخ UI الجديد
           cp -R ./_b2uprog/components ./components
           cp -R ./_b2uprog/services ./services || true
           cp -R ./_b2uprog/backend ./backend || true
@@ -54,9 +51,6 @@ jobs:
           cp -f ./_b2uprog/README.md ./README.md || true
           cp -f ./_b2uprog/metadata.json ./metadata.json || true
 
-          # مهم: لا تخلّي _b2uprog ينضاف للـ git
-          rm -rf ./_b2uprog
-
           echo "✅ Sync done"
 
       - name: Setup Node
@@ -64,7 +58,7 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install dependencies
+      - name: Install dependencies (ci if lock exists)
         shell: bash
         run: |
           if [ -f package-lock.json ]; then
@@ -76,12 +70,16 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # 🔥 bump version (patch) داخل tauri.conf.json فقط في ال runner (بدون commit)
-      - name: Bump version (patch)
-        id: bump
+      - name: Install Tauri CLI
+        shell: bash
+        run: npm i -D @tauri-apps/cli
+
+      # ✅ FIX: لا يوجد tee ولا كسر لـ GITHUB_OUTPUT
+      - name: Bump version (patch) + output
+        id: ver
         shell: bash
         run: |
-          node - <<'NODE'
+          VERSION=$(node - <<'NODE'
           const fs = require("fs");
           const path = "src-tauri/tauri.conf.json";
           const j = JSON.parse(fs.readFileSync(path,"utf8"));
@@ -89,84 +87,108 @@ jobs:
           v[2] = (v[2]||0)+1;
           j.version = v.join(".");
           fs.writeFileSync(path, JSON.stringify(j,null,2));
-          console.log("version="+j.version);
-          NODE | tee -a "$GITHUB_OUTPUT"
+          console.log(j.version);
+          NODE
+          )
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "NEW_VERSION=$VERSION"
 
       - name: Build frontend
+        shell: bash
         run: npm run build
 
       - name: Build Tauri (release)
+        shell: bash
         run: npx tauri build
 
-      # ✅ لاقي dmg
-      - name: Locate DMG
-        id: dmg
-        shell: bash
-        run: |
-          DMG_PATH=$(ls -1 src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)
-          echo "dmg=$DMG_PATH" >> $GITHUB_OUTPUT
-          echo "DMG_PATH=$DMG_PATH"
-
-      # ✅ توقيع dmg باستخدام secrets (بدون export غلط)
+      # ✅ Sign DMG باستخدام Secrets
       - name: Sign DMG
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          npx tauri signer sign "${{ steps.dmg.outputs.dmg }}" \
-            --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
-            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          set -e
+          DMG=$(ls -1 src-tauri/target/release/bundle/dmg/*.dmg | head -n 1)
+          echo "DMG=$DMG"
 
-      # ✅ توليد latest.json كـ asset للـ release
+          KEY_FILE="/tmp/tauri.key"
+          printf "%s" "$TAURI_SIGNING_PRIVATE_KEY" > "$KEY_FILE"
+
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]; then
+            npx tauri signer sign "$DMG" --private-key-path "$KEY_FILE" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+          else
+            npx tauri signer sign "$DMG" --private-key-path "$KEY_FILE"
+          fi
+
+          ls -la "${DMG}.sig"
+
+      # ✅ Generate latest.json (لـ updater)
       - name: Generate latest.json
-        id: latest
         shell: bash
         run: |
-          VERSION="${{ steps.bump.outputs.version }}"
-          TAG="v${VERSION}"
-
-          DMG_FILE=$(basename "${{ steps.dmg.outputs.dmg }}")
-          DMG_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${DMG_FILE}"
-
-          SIG_PATH="${{ steps.dmg.outputs.dmg }}.sig"
+          set -e
+          VERSION="${{ steps.ver.outputs.version }}"
+          TAG="v$VERSION"
+          DMG_FILE=$(ls -1 src-tauri/target/release/bundle/dmg/*.dmg | xargs -n 1 basename | head -n 1)
+          SIG_PATH="src-tauri/target/release/bundle/dmg/${DMG_FILE}.sig"
           SIG_CONTENT=$(cat "$SIG_PATH")
 
-          cat > latest.json <<EOF
-          {
-            "version": "${VERSION}",
-            "notes": "Release ${TAG}",
-            "pub_date": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "platforms": {
+          SIZE=$(stat -f%z "src-tauri/target/release/bundle/dmg/${DMG_FILE}")
+
+          node - <<'NODE'
+          const fs = require("fs");
+          const version = process.env.VERSION;
+          const tag = process.env.TAG;
+          const dmg = process.env.DMG_FILE;
+          const sig = process.env.SIG_CONTENT;
+          const size = Number(process.env.SIZE);
+
+          const owner = "malekedrees84";
+          const repo  = "b2u-plus-erp";
+
+          const latest = {
+            version,
+            notes: `Release ${tag}`,
+            pub_date: new Date().toISOString(),
+            platforms: {
               "darwin-aarch64": {
-                "url": "${DMG_URL}",
-                "signature": ${SIG_CONTENT@Q},
-                "size": $(stat -f%z "${{ steps.dmg.outputs.dmg }}")
+                url: `https://github.com/${owner}/${repo}/releases/download/${tag}/${dmg}`,
+                signature: sig,
+                size
               }
             }
-          }
-          EOF
+          };
 
-          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+          fs.writeFileSync("latest.json", JSON.stringify(latest, null, 2));
+          console.log("✅ latest.json created");
+          NODE
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          TAG: v${{ steps.ver.outputs.version }}
+          DMG_FILE: ${{ env.DMG_FILE }}
+          SIG_CONTENT: ${{ env.SIG_CONTENT }}
+          SIZE: ${{ env.SIZE }}
 
-      # ✅ Create Tag (بدون push main)
-      - name: Create and push tag only
+      # ✅ Tag + Release (بدون push لـ main عشان ما يصير non-fast-forward)
+      - name: Create tag
         shell: bash
         run: |
-          git tag "${{ steps.latest.outputs.TAG }}"
-          git push origin "${{ steps.latest.outputs.TAG }}"
+          set -e
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
 
-      # ✅ Release + upload فقط الملفات المهمة
-      - name: Upload Release (GH Release)
+          TAG="v${{ steps.ver.outputs.version }}"
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Upload Release assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.latest.outputs.TAG }}
-          name: ${{ steps.latest.outputs.TAG }}
-          overwrite: true
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: v${{ steps.ver.outputs.version }}
           fail_on_unmatched_files: false
           files: |
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/dmg/*.sig
             latest.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

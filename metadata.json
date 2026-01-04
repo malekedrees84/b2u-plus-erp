@@ -1,0 +1,7 @@
+{
+  "name": "Copy of B2u prog",
+  "description": "نظام تشغيل احترافي لشركات التسويق الديجيتالي يعتمد على طلبات الإنتاج.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

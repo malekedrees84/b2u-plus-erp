@@ -20,9 +20,7 @@
         "fullscreen": false
       }
     ],
-    "security": {
-      "csp": null
-    }
+    "security": { "csp": null }
   },
   "bundle": {
     "active": true,
@@ -41,10 +39,8 @@
       "endpoints": [
         "https://github.com/malekedrees84/b2u-plus-erp/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJFRjY5NUI3N0RGQTU4OTEKUldTUldQcDl0NVgydm9RcUtRR2J1OU9qUVp0Z2xmcHhCVm9NRWR6L0ZFa0lDTFYrbmZ0anVNMGoK",
-      "windows": {
-        "installMode": "passive"
-      }
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk3MzI1NkMzQUQ0MzVGNEQKUldSTlgwT3R3MVl5bDg4ZWlWZURxU2VSM3M4THlhVE9hM3huOEZXMktrbjl0S1E0Vmpia3RQTUYK",
+      "windows": { "installMode": "passive" }
     }
   }
 }
